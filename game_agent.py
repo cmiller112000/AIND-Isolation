@@ -7,7 +7,8 @@ You must test your agent's strength against a set of agents with known
 relative strength using tournament.py and include the results in your report.
 """
 import random
-
+import math
+import sys
 
 class Timeout(Exception):
     """Subclass base exception for code clarity."""
@@ -17,9 +18,6 @@ class Timeout(Exception):
 def custom_score(game, player):
     """Calculate the heuristic value of a game state from the point of view
     of the given player.
-
-    Note: this function should be called from within a Player instance as
-    `self.score()` -- you should not need to call this function directly.
 
     Parameters
     ----------
@@ -32,13 +30,20 @@ def custom_score(game, player):
         one of the player objects `game.__player_1__` or `game.__player_2__`.)
 
     Returns
-    -------
+    ----------
     float
         The heuristic value of the current game state to the specified player.
     """
 
     # TODO: finish this function!
-    raise NotImplementedError
+    # if game.is_loser(player):
+    #     return float("-inf")
+    #
+    # if game.is_winner(player):
+    #     return float("inf")
+
+    legalmoves = game.get_legal_moves(player)
+    return float(len(legalmoves))
 
 
 class CustomPlayer:
@@ -79,6 +84,7 @@ class CustomPlayer:
         self.method = method
         self.time_left = None
         self.TIMER_THRESHOLD = timeout
+        self.function_mappings = { "minimax": self.minimax, "alphabeta": self.alphabeta}
 
     def get_move(self, game, legal_moves, time_left):
         """Search for the best move from the available legal moves and return a
@@ -110,7 +116,7 @@ class CustomPlayer:
             the game.
 
         Returns
-        -------
+        ----------
         (int, int)
             Board coordinates corresponding to a legal move; may return
             (-1, -1) if there are no available legal moves.
@@ -123,20 +129,38 @@ class CustomPlayer:
         # Perform any required initializations, including selecting an initial
         # move from the game board (i.e., an opening book), or returning
         # immediately if there are no legal moves
+        if not legal_moves:
+            return (-1, -1)
 
+        bestscore, bestmove = max([(self.score(game.forecast_move(m), self), m) for m in legal_moves])
         try:
             # The search method call (alpha beta or minimax) should happen in
             # here in order to avoid timeout. The try/except block will
             # automatically catch the exception raised by the search method
             # when the timer gets close to expiring
-            pass
+
+            # if we are not doing iterative deeping, call the search method once for as deep a we're allowed
+            # otherwise, we are doing iterative deeping so repeated call the search method starting at a depth 2 (top level, plus it's children)
+            # and continue to increase the # of levels until we finish, or time runs out, and return the best score move seen until then
+
+            if not self.iterative:
+                _,bestmove = self.function_mappings[self.method](game, self.search_depth)
+            else:
+                d = 2
+                while (True):
+                    score,move = self.function_mappings[self.method](game, d)
+                    if move == (-1,-1):
+                        break
+                    if score > bestscore:
+                        bestscore=score
+                        bestmove=move
+                    d += 1
 
         except Timeout:
-            # Handle any actions required at timeout, if necessary
             pass
 
         # Return the best move from the last completed search iteration
-        raise NotImplementedError
+        return bestmove
 
     def minimax(self, game, depth, maximizing_player=True):
         """Implement the minimax search algorithm as described in the lectures.
@@ -156,24 +180,40 @@ class CustomPlayer:
             maximizing layer (True) or a minimizing layer (False)
 
         Returns
-        -------
+        ----------
         float
             The score for the current search branch
 
         tuple(int, int)
             The best move for the current branch; (-1, -1) for no legal moves
-
-        Notes
-        -----
-            (1) You MUST use the `self.score()` method for board evaluation
-                to pass the project unit tests; you cannot call any other
-                evaluation function directly.
         """
         if self.time_left() < self.TIMER_THRESHOLD:
             raise Timeout()
 
         # TODO: finish this function!
-        raise NotImplementedError
+        if (depth == 0):
+            return self.score(game,self), (-1,-1)
+        lmoves = game.get_legal_moves()
+        if not lmoves:
+            return self.score(game,self), (-1,-1)
+        bestscore = None
+        if maximizing_player:
+            for m in lmoves:
+                score, move = self.minimax(game.forecast_move(m), depth - 1, not maximizing_player)
+                if bestscore is None or score > bestscore:
+                    bestscore = score
+                    bestmove = m
+        else:
+            for m in lmoves:
+                score, move = self.minimax(game.forecast_move(m), depth - 1, not maximizing_player)
+                if bestscore is None or score < bestscore:
+                    bestscore = score
+                    bestmove = m
+
+        return bestscore, bestmove
+
+    def argsort(self,listtosort, reversed=False):
+        return sorted(range(len(listtosort)),key=listtosort.__getitem__, reverse=reversed)
 
     def alphabeta(self, game, depth, alpha=float("-inf"), beta=float("inf"), maximizing_player=True):
         """Implement minimax search with alpha-beta pruning as described in the
@@ -200,21 +240,41 @@ class CustomPlayer:
             maximizing layer (True) or a minimizing layer (False)
 
         Returns
-        -------
+        ----------
         float
             The score for the current search branch
 
         tuple(int, int)
             The best move for the current branch; (-1, -1) for no legal moves
-
-        Notes
-        -----
-            (1) You MUST use the `self.score()` method for board evaluation
-                to pass the project unit tests; you cannot call any other
-                evaluation function directly.
         """
         if self.time_left() < self.TIMER_THRESHOLD:
             raise Timeout()
 
         # TODO: finish this function!
-        raise NotImplementedError
+        if (depth == 0):
+            return self.score(game,self), (-1,-1)
+        lmoves = game.get_legal_moves()
+        if not lmoves:
+            return self.score(game,self), (-1,-1)
+
+        bestscore=None
+        if maximizing_player:
+            for m in lmoves:
+                score, move = self.alphabeta(game.forecast_move(m), depth - 1, alpha, beta, not maximizing_player)
+                if bestscore is None or score > bestscore:
+                    bestscore = score
+                    bestmove = m
+                    if bestscore >= beta:
+                        return bestscore, bestmove
+                    alpha = max(alpha,bestscore)
+        else:
+            for m in lmoves:
+                score, move = self.alphabeta(game.forecast_move(m), depth - 1, alpha, beta, not maximizing_player)
+                if bestscore is None or score < bestscore:
+                    bestscore = score
+                    bestmove = m
+                    if bestscore <= alpha:
+                        return bestscore, bestmove
+                    beta = min(beta,bestscore)
+
+        return bestscore, bestmove
