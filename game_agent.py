@@ -8,19 +8,120 @@ relative strength using tournament.py and include the results in your report.
 """
 import random
 import math
-import sys
 
 class Timeout(Exception):
     """Subclass base exception for code clarity."""
     pass
 
+def improved_score(game, player):
+    own_moves = len(game.get_legal_moves(player))
+    opp_moves = len(game.get_legal_moves(game.get_opponent(player)))
+    return float(own_moves - opp_moves)
+
+def minmax_xy(moves):
+    if len(moves) == 0:
+        return -1, -1, -1, -1
+    minx = min([(move[0]) for move in moves])
+    maxx = max([(move[0]) for move in moves])
+    miny = min([(move[1]) for move in moves])
+    maxy = max([(move[1]) for move in moves])
+    return minx, maxx, miny, maxy
+
+def get_reachable(moves):
+    minx, maxx, miny, maxy = minmax_xy(moves)
+
+    moveset = set()
+    if (minx < 0) :
+        return moveset
+    for x in range(minx, maxx):
+        for y in range(miny, maxy):
+            moveset.add((x,y))
+    return moveset
+
+def open_area(game, player, blanks):
+    own_moves=get_reachable(game.get_legal_moves(player))
+    if len(own_moves) > 0:
+        own_reachable = own_moves.intersection(blanks)
+    else:
+        own_reachable = set()
+    opp_moves=get_reachable(game.get_legal_moves(game.get_opponent(player)))
+    if len(opp_moves) > 0:
+        opp_reachable = opp_moves.intersection(blanks)
+    else:
+        opp_reachable = set()
+    return float(len(own_reachable) - len(opp_reachable))
+
+
+def open_score(game, player):
+    legalmoves = game.get_legal_moves(player)
+    return float(len(legalmoves))
+
+
+def manhatten_distance(p,q):
+    return abs( p[0] - q[0]) + abs(p[1] - q[1])
+
+def euclidean_distance(p,q):
+    return math.sqrt( (p[0] - q[0])**2 + (p[1] - q[1])**2 )
+
+
+def near_corner(game,player):
+    isnc=False
+    ploc=game.get_player_location(player)
+    if ploc[0] < 2 or ploc[0] > (game.height - 2) or ploc[1] < 1 or ploc[1] > (game.width - 2):
+        isnc=True
+    return isnc
+
+def w_corners(game,player):
+    own_moves = len(game.get_legal_moves(player))
+    opp_moves = len(game.get_legal_moves(game.get_opponent(player)))
+    moves_diff = own_moves - opp_moves
+    own_ncorner=0
+    if near_corner(game,player):
+        own_ncorner=1
+    opp_ncorner=0
+    if near_corner(game,game.get_opponent(player)):
+        opp_ncorner=1
+
+    score = moves_diff - 2*own_ncorner + 4*opp_ncorner
+    return float( score)
+
+def is_edge(game,player):
+    isnc=False
+    ploc=game.get_player_location(player)
+    if ploc[0] == 0 or ploc[0] == (game.height - 1) or ploc[1] == 0 or ploc[1] == (game.width - 1):
+        isnc=True
+    return isnc
+
+def w_edges(game,player,blanks):
+    own_moves = len(game.get_legal_moves(player))
+    opp_moves = len(game.get_legal_moves(game.get_opponent(player)))
+    moves_diff = own_moves - opp_moves
+    own_edge=0
+    opp_edge=0
+    if is_edge(game,player):
+        own_edge=1
+    if is_edge(game,game.get_opponent(player)):
+        opp_edge=1
+    score =  0.7*moves_diff - 0.3*own_edge + 0.1*opp_edge
+    return float( score)
+
+def w_improved_score(game, player, distfunc=euclidean_distance):
+    cntr = ( math.ceil(game.height/2), math.ceil(game.width/2) )
+    own_dist = distfunc(game.get_player_location(player),cntr)
+    opp_dist = distfunc(game.get_player_location(game.get_opponent(player)),cntr)
+    dist_diff = opp_dist - own_dist
+    own_moves = len(game.get_legal_moves(player))
+    opp_moves = len(game.get_legal_moves(game.get_opponent(player)))
+    moves_diff = own_moves - opp_moves
+    score = moves_diff + 2*dist_diff
+    return float( score)
 
 def custom_score(game, player):
     """Calculate the heuristic value of a game state from the point of view
     of the given player.
 
     Parameters
-    ----------
+    ----------player
     game : `isolation.Board`
         An instance of `isolation.Board` encoding the current state of the
         game (e.g., player locations and blocked cells).
@@ -36,15 +137,20 @@ def custom_score(game, player):
     """
 
     # TODO: finish this function!
-    # if game.is_loser(player):
-    #     return float("-inf")
-    #
-    # if game.is_winner(player):
-    #     return float("inf")
+    if game.is_loser(player):
+        return float("-inf")
 
-    legalmoves = game.get_legal_moves(player)
-    return float(len(legalmoves))
+    if game.is_winner(player):
+        return float("inf")
 
+    blanks=game.get_blank_spaces()
+    pctblanks=len(blanks)/(game.height * game.width)
+    if pctblanks < 0.4:
+        return w_edges(game, player,blanks)
+#    elif pctblanks < 0.7:
+#        return open_area(game, player,blanks)
+    else:
+        return improved_score(game,player)
 
 class CustomPlayer:
     """Game-playing agent that chooses a move using your evaluation function
@@ -129,10 +235,10 @@ class CustomPlayer:
         # Perform any required initializations, including selecting an initial
         # move from the game board (i.e., an opening book), or returning
         # immediately if there are no legal moves
-        if not legal_moves:
-            return (-1, -1)
+        bestmove=(-1,-1)
+        if not legal_moves or len(legal_moves) == 0:
+            bestmove
 
-        bestscore, bestmove = max([(self.score(game.forecast_move(m), self), m) for m in legal_moves])
         try:
             # The search method call (alpha beta or minimax) should happen in
             # here in order to avoid timeout. The try/except block will
@@ -147,14 +253,18 @@ class CustomPlayer:
                 _,bestmove = self.function_mappings[self.method](game, self.search_depth)
             else:
                 d = 2
-                while (True):
-                    score,move = self.function_mappings[self.method](game, d)
-                    if move == (-1,-1):
-                        break
-                    if score > bestscore:
-                        bestscore=score
-                        bestmove=move
-                    d += 1
+                if (len(legal_moves) == 0):
+                    bestmove=(-1,-1)
+                else:
+                    bestscore, bestmove = max([(self.score(game.forecast_move(m), self), m) for m in legal_moves])
+                    while (True):
+                        score,move = self.function_mappings[self.method](game, d)
+                        if move == (-1,-1):
+                            break
+                        if score > bestscore:
+                            bestscore=score
+                            bestmove=move
+                        d += 1
 
         except Timeout:
             pass
