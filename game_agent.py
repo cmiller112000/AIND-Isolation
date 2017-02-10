@@ -102,7 +102,7 @@ def w_edges(game,player,blanks):
         own_edge=1
     if is_edge(game,game.get_opponent(player)):
         opp_edge=1
-    score =  0.7*moves_diff - 0.3*own_edge + 0.1*opp_edge
+    score =  0.4*moves_diff - 0.3*own_edge + 0.3*opp_edge
     return float( score)
 
 def w_improved_score(game, player, distfunc=euclidean_distance):
@@ -115,6 +115,12 @@ def w_improved_score(game, player, distfunc=euclidean_distance):
     moves_diff = own_moves - opp_moves
     score = moves_diff + 2*dist_diff
     return float( score)
+
+def common_moves(game,player):
+    own_moves = set(game.get_legal_moves(player))
+    opp_moves = set(game.get_legal_moves(game.get_opponent(player)))
+    cmn_moves = own_moves.intersection(opp_moves)
+    return float(len(cmn_moves))
 
 def custom_score(game, player):
     """Calculate the heuristic value of a game state from the point of view
@@ -145,10 +151,10 @@ def custom_score(game, player):
 
     blanks=game.get_blank_spaces()
     pctblanks=len(blanks)/(game.height * game.width)
-    if pctblanks < 0.4:
+    if pctblanks < 0.5:
         return w_edges(game, player,blanks)
-#    elif pctblanks < 0.7:
-#        return open_area(game, player,blanks)
+    elif pctblanks < 0.8:
+        return open_area(game, player,blanks)
     else:
         return improved_score(game,player)
 
